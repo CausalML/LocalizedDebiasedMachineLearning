@@ -145,13 +145,13 @@ est.quantile.ldml = function(gammas, data, form_x, form_t, form_y, method_ipw, o
       cdf0[cvgroup==k]   = method_cdf(data, (if(semiadaptive) cvgroup!=k else cvgroup!=k & (cvgroup-(cvgroup>k)) %% 2==1) & data[[form_t]]==0, cvgroup==k, form_x, form_cdf0, option_cdf)
     };
     q1 = if(avg.eqn) {
-        data[[form_y]][solve.cumsum(W1/sum(prop$keep),gamma + mean(cdf1[prop$keep] * (1.- data[[form_t]][prop$keep]/prop$prop[prop$keep])))]
+        data[[form_y]][solve.cumsum(W1/sum(prop$keep),gamma - mean(cdf1[prop$keep] * (1.- data[[form_t]][prop$keep]/prop$prop[prop$keep])))]
       } else {
-        foreach(k=1:K, .combine=sum)%do%{data[[form_y]][solve.cumsum(W1*(cvgroup==k)/sum(prop$keep&(cvgroup==k)),gamma + mean(cdf1[prop$keep&(cvgroup==k)] * (1.- data[[form_t]][prop$keep&(cvgroup==k)]/prop$prop[prop$keep&(cvgroup==k)])))]}/K};
+        foreach(k=1:K, .combine=sum)%do%{data[[form_y]][solve.cumsum(W1*(cvgroup==k)/sum(prop$keep&(cvgroup==k)),gamma - mean(cdf1[prop$keep&(cvgroup==k)] * (1.- data[[form_t]][prop$keep&(cvgroup==k)]/prop$prop[prop$keep&(cvgroup==k)])))]}/K};
     q0 = if(avg.eqn) {
-        data[[form_y]][solve.cumsum(W0/sum(prop$keep),gamma+mean(cdf0[prop$keep] * (1.- (1.-data[[form_t]][prop$keep])/(1.-prop$prop[prop$keep]))))]
+        data[[form_y]][solve.cumsum(W0/sum(prop$keep),gamma - mean(cdf0[prop$keep] * (1.- (1.-data[[form_t]][prop$keep])/(1.-prop$prop[prop$keep]))))]
       } else {
-        foreach(k=1:K, .combine=sum)%do%{data[[form_y]][solve.cumsum(W0*(cvgroup==k)/sum(prop$keep&(cvgroup==k)),gamma + mean(cdf0[prop$keep&(cvgroup==k)] * (1.- (1.-data[[form_t]][prop$keep&(cvgroup==k)])/(1.-prop$prop[prop$keep&(cvgroup==k)]))))]}/K};
+        foreach(k=1:K, .combine=sum)%do%{data[[form_y]][solve.cumsum(W0*(cvgroup==k)/sum(prop$keep&(cvgroup==k)),gamma - mean(cdf0[prop$keep&(cvgroup==k)] * (1.- (1.-data[[form_t]][prop$keep&(cvgroup==k)])/(1.-prop$prop[prop$keep&(cvgroup==k)]))))]}/K};
     psi1 = (W1[prop$keep] * (data[[form_y]][prop$keep] <= q1) - gamma - cdf1[prop$keep] * (1.- data[[form_t]][prop$keep]/prop$prop[prop$keep])) / density_(data[[form_y]][data[[form_t]]==1 & prop$keep], 1./prop$prop[data[[form_t]]==1 & prop$keep], q1);
     psi0 = (W0[prop$keep] * (data[[form_y]][prop$keep] <= q0) - gamma - cdf0[prop$keep] * (1.- (1.-data[[form_t]][prop$keep])/(1.-prop$prop[prop$keep]))) / density_(data[[form_y]][data[[form_t]]==0 & prop$keep], 1./(1.-prop$prop[data[[form_t]]==0 & prop$keep]), q0);
     se1 = sd(psi1) / sqrt(sum(prop$keep));

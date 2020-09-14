@@ -1,4 +1,4 @@
-packages.needed = c('foreach','tidyverse','Hmisc','gbm','glmnetUtils','nnet','hdm','ks');
+packages.needed = c('foreach','tidyverse','Hmisc','gbm','glmnetUtils','nnet','hdm','ks','randomForest');
 lapply(packages.needed, library, character.only = TRUE);
 
 # returns list of length n of integers in {1,..,K} indicating fold membership
@@ -279,6 +279,15 @@ boost = function(data, trainmask, testmask, form_x, form_resp, option) {
   return(predict(fit, n.trees=best, newdata=data[testmask,],  type="response"))
 }
 
+forest_option = list(nodesize=1, ntree=1000, na.action=na.omit, replace=TRUE)
+forest = function(data, trainmask, testmask, form_x, form_resp, option) {
+  form = as.formula(paste("as.factor(",form_resp, ") ~", form_x));
+  tryCatch({
+    fit = do.call(randomForest, append(list(formula=form, data=data[trainmask,]), option))
+    return(predict(fit, newdata=data[testmask,],  type="prob")[,2])
+  }, error = function(err) const(data, trainmask, testmask, form_x, form_resp, const_option))
+}
+
 neuralnet_option = list(linout=FALSE, size=2,  maxit=1000, decay=0.02, MaxNWts=10000,  trace=FALSE)
 neuralnet = function(data, trainmask, testmask, form_x, form_resp, option) {
   form = as.formula(paste(form_resp, "~", form_x));
@@ -320,6 +329,7 @@ reglm = function(data, trainmask, testmask, form_x, form_resp, option) {
 
 methods.classification = list(
   boost = list(method=boost, option=boost_option),
+  forest = list(method=forest, option=forest_option),
   neuralnet = list(method=neuralnet, option=neuralnet_option),
   lassor = list(method=lassor, option=lassor_nopost_option),
   lassorpost = list(method=lassor, option=lassor_post_option),

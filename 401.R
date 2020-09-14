@@ -24,7 +24,7 @@ Ks = c(5,15,25)
 trim = c(0.01, 0.99)
 trim.type = 'clip'
 normalize = T
-cls.meth.ks = c('lassor','boost','neuralnet')
+cls.meth.ks = c('lassor','boost','forest','neuralnet')
 seeds.method = 100
 
 res = foreach(K = Ks, .combine='rbind', .inorder=FALSE)%:%foreach(cls.meth.k = cls.meth.ks, .combine='rbind', .inorder=FALSE)%:%foreach(seed.method = 1:seeds.method, .combine='rbind', .inorder=FALSE, .packages=packages.needed) %dopar% {
@@ -57,13 +57,13 @@ res2 = res %>% group_by(gamma,K,trim.type,method) %>% summarise(across(c('q1','q
 col_names1 = c('gamma', 'K', 'trim.type', 'method')
 col_names2 = c('est', 'se_split', 'se_lead', 'type')
 res3 = do.call(rbind, lapply(c('1','0','te'), function(x){res2 %>% select(c(col_names1,starts_with(paste('q',x,sep='')),starts_with(paste('se',x,sep='')))) %>% mutate(type=x) %>% setNames(c(col_names1,col_names2))})) %>% mutate(se = sqrt(se_lead^2 + se_split^2))
-print(xtable(res3 %>% ungroup %>% filter(type=='te') %>% mutate(est = sprintf('%.1f (%.1f)',est,se)) %>% select(gamma,K,method,est) %>% pivot_wider(names_from=method, values_from=est) %>% select(gamma,K,lassor,neuralnet,boost) %>% mutate(K=as.factor(K)) ),include.rownames=FALSE)
+print(xtable(res3 %>% ungroup %>% filter(type=='te') %>% mutate(est = sprintf('%.1f (%.1f)',est,se)) %>% select(gamma,K,method,est) %>% pivot_wider(names_from=method, values_from=est) %>% select(gamma,K,lassor,neuralnet,boost,forest) %>% mutate(K=as.factor(K)) ),include.rownames=FALSE)
 
 res2 = res_l %>% group_by(gamma,K,trim.type,method) %>% summarise(across(c('q1','q0','qte'), list(mean=~winsor.mean(.,na.rm = TRUE),se=~winsor.sd(.,na.rm = TRUE)/sqrt(n()))), across(c('se1','se0','seqte'), ~winsor.mean(.,na.rm = TRUE))) %>% rename(sete=seqte)
 col_names1 = c('gamma', 'K', 'trim.type', 'method')
 col_names2 = c('est', 'se_split', 'se_lead', 'type')
 res3 = do.call(rbind, lapply(c('1','0','te'), function(x){res2 %>% select(c(col_names1,starts_with(paste('q',x,sep='')),starts_with(paste('se',x,sep='')))) %>% mutate(type=x) %>% setNames(c(col_names1,col_names2))})) %>% mutate(se = sqrt(se_lead^2 + se_split^2))
-print(xtable(res3 %>% ungroup %>% filter(type=='te') %>% mutate(est = sprintf('%.1f (%.1f)',est,se)) %>% select(gamma,K,method,est) %>% pivot_wider(names_from=method, values_from=est) %>% select(gamma,K,lassor,neuralnet,boost) %>% mutate(K=as.factor(K)) ),include.rownames=FALSE)
+print(xtable(res3 %>% ungroup %>% filter(type=='te') %>% mutate(est = sprintf('%.1f (%.1f)',est,se)) %>% select(gamma,K,method,est) %>% pivot_wider(names_from=method, values_from=est) %>% select(gamma,K,lassor,neuralnet,boost,forest) %>% mutate(K=as.factor(K)) ),include.rownames=FALSE)
 
 quantSE =  function(x, p) {
   quant <- quantile(x,p)

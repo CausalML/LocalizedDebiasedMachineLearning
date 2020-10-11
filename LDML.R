@@ -1,4 +1,4 @@
-packages.needed = c('foreach','tidyverse','Hmisc','gbm','glmnetUtils','nnet','hdm','ks','randomForest');
+packages.needed = c('foreach','tidyverse','Hmisc','gbm','glmnetUtils','nnet','hdm','ks','randomForest','quantregForest');
 lapply(packages.needed, library, character.only = TRUE);
 
 # returns list of length n of integers in {1,..,K} indicating fold membership
@@ -166,6 +166,69 @@ est.quantile.ldml = function(gammas, data, form_x, form_t, form_y, method_ipw, o
       se0=se0,
       seqte=seqte
     )
+  })
+}
+
+## This uses the estimating equation 1/n sum_i T_i I[Y_i<=theta] / e(X_i) = gamma - 1/n sum_i f(theta,X_i)*(1-T_i/e(X_i))
+## Where f(theta,x)=P(Y<=theta|X=x,T=1)
+## We use non-localized DML cross-fitting with K folds
+## Namely, for each fold, we take the remaining data and use it for fitting e(.) and the whole f(.,.)
+## We use this on X_i in the fold to get ehat_i, fhat_i(theta)
+## We restrict the range of theta to a discretized grid of marginal Y quantiles
+## Then we fit f(theta,.) for each theta in the range
+## The range of quantiles is given by the list qrange
+## Or if qrange is a number the we use all quantiles by qrange increments
+## We then solve the equation by brute force search over theta in qrange to minimize abs of eqn
+## If cdf_regress is T then method_cdf is a binary regresison method that we apply to each I[Y_i<=theta]
+## If cdf_regress is F then method_cdf takes list of quantiles to simultaneously predict
+## If avg.eqn is T we solve the average equation where each element is using out-of-fold nuisnaces
+## If avg.eqn is F we solve the equation in each fold and then average the estimates
+est.quantile.dml = function(gammas, data, form_x, form_t, form_y, method_prop, option_prop, method_cdf, option_cdf, cdf_regress=T, qrange=0.01, K=5, trim=c(0.01,0.99), trim.type='none', normalize=T, avg.eqn=T) {
+  if(length(qrange)==1) {
+    qrange = seq(qrange,1.-qrange,qrange)
+    #qrange = qrange[(qrange>=min(gammas)-.1) & (qrange<=max(gammas)+.1)]
+  }
+  cvgroup   = make.cvgroup.balanced(data, K, form_t)
+  prop = cross.fit.propensities(data, cvgroup, form_x, form_t, method_prop, option_prop, trim=trim, trim.type=trim.type, normalize=normalize)
+  yqs  = quantile(data[[form_y]], qrange)
+  cdf1      = matrix(0L, length(qrange), nrow(data));
+  cdf0      = matrix(0L, length(qrange), nrow(data));
+  if (cdf_regress) {
+    for (i in 1:length(qrange)) {
+      for (k in 1:K) {
+        form_cdf1          = paste('I(',form_y,'<=',as.numeric(yqs[i]),')')
+        cdf1[i,cvgroup==k] = method_cdf(data, cvgroup!=k & data[[form_t]]==1, cvgroup==k, form_x, form_cdf1, option_cdf)
+        form_cdf0          = paste('I(',form_y,'<=',as.numeric(yqs[i]),')')
+        cdf0[i,cvgroup==k] = method_cdf(data, cvgroup!=k & data[[form_t]]==0, cvgroup==k, form_x, form_cdf0, option_cdf)
+      }
+    }
+  } else {
+    for (k in 1:K) {
+      cdf1[,cvgroup==k] = t(method_cdf(data, cvgroup!=k & data[[form_t]]==1, cvgroup==k, form_x, form_y, yqs, option_cdf))
+      cdf0[,cvgroup==k] = t(method_cdf(data, cvgroup!=k & data[[form_t]]==0, cvgroup==k, form_x, form_y, yqs, option_cdf))
+    }
+  }
+  yleq = outer(yqs,data[[form_y]],'>=')
+  a1 = if(avg.eqn) (yleq %*% (prop$keep*data[[form_t]]/prop$prop) + cdf1 %*% (prop$keep*(1-data[[form_t]]/prop$prop))) else foreach(k=1:K)%do%{(yleq %*% ((prop$keep&cvgroup==k)*data[[form_t]]/prop$prop) + cdf1 %*% ((prop$keep&cvgroup==k)*(1-data[[form_t]]/prop$prop)))}
+  a0 = if(avg.eqn) (yleq %*% (prop$keep*(1-data[[form_t]])/(1-prop$prop)) + cdf1 %*% (prop$keep*(1-(1-data[[form_t]])/(1-prop$prop)))) else foreach(k=1:K)%do%{(yleq %*% ((prop$keep&cvgroup==k)*(1-data[[form_t]])/(1-prop$prop)) + cdf1 %*% ((prop$keep&cvgroup==k)*(1-(1-data[[form_t]])/(1-prop$prop))))}
+  return(foreach(gamma=gammas, .combine=rbind)%do% {
+    q1 = if(avg.eqn) yqs[which.min(abs(a1/sum(prop$keep) - gamma))] else foreach(k=1:K, .combine=sum)%do%{yqs[which.min(abs(a1[[k]]/sum(prop$keep&cvgroup==k) - gamma))]}/K;
+    q0 = if(avg.eqn) yqs[which.min(abs(a0/sum(prop$keep) - gamma))] else foreach(k=1:K, .combine=sum)%do%{yqs[which.min(abs(a0[[k]]/sum(prop$keep&cvgroup==k) - gamma))]}/K;
+    i1 = which.min(abs(yqs-q1))
+    i0 = which.min(abs(yqs-q0))
+    psi1 = (yleq[i1,] * (prop$keep*data[[form_t]]/prop$prop) + cdf1[i1,] * (prop$keep*(1-data[[form_t]]/prop$prop)) - gamma) / density_(data[[form_y]][data[[form_t]]==1 & prop$keep], 1./prop$prop[data[[form_t]]==1 & prop$keep], q1);
+    psi0 = (yleq[i0,] * (prop$keep*(1-data[[form_t]])/(1-prop$prop)) + cdf1[i0,] * (prop$keep*(1-(1-data[[form_t]])/(1-prop$prop))) - gamma) / density_(data[[form_y]][data[[form_t]]==0 & prop$keep], 1./(1.-prop$prop[data[[form_t]]==0 & prop$keep]), q0);
+    se1 = sd(psi1[prop$keep]) / sqrt(sum(prop$keep));
+    se0 = sd(psi0[prop$keep]) / sqrt(sum(prop$keep));
+    seqte = sd(psi1[prop$keep]-psi0[prop$keep]) / sqrt(sum(prop$keep));
+    data.frame(
+      gamma=gamma,
+      q1=q1,
+      q0=q0,
+      qte=q1-q0,
+      se1=se1,
+      se0=se0,
+      seqte=seqte)
   })
 }
 
@@ -340,3 +403,10 @@ methods.classification = list(
   const = list(method=const, option=const_option)
 )
 
+forestcdf_option = list()
+forestcdf = function(data, trainmask, testmask, form_x, form_resp, ths, option) {
+  form = as.formula(paste(form_resp, "~", form_x));
+  lmfit = lm(form,  x = TRUE, y = TRUE, data = data[trainmask,]);
+  fit = do.call(quantregForest, append(list(x=lmfit$x[ ,-1], y=lmfit$y), option));
+  return(predict(fit, newdata=data[testmask,], what=function(z){colMeans(outer(z,ths,'<='))}));
+}

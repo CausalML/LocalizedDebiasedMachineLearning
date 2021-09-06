@@ -28,7 +28,7 @@ cross.fit.propensities = function(data, cvgroup, form_x, form_t, method_prop, op
   K = max(cvgroup)
   prop      = numeric(nrow(data))
   for (k in 1:K) {
-    prop[cvgroup!=k] = method_prop(data, (cvgroup==k) & trainmask, cvgroup!=k, form_x, form_t, option_prop)
+    prop[cvgroup==k] = method_prop(data, (cvgroup!=k) & trainmask, cvgroup==k, form_x, form_t, option_prop)
   }
   if(trim.type == 'drop') {
     keep = (prop>trim[1] & prop<trim[2])

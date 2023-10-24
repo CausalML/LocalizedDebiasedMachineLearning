@@ -10,6 +10,8 @@ library(xtable)
 library(psych)
 library(foreign)
 
+library(tidyverse)
+
 data      = read.dta("sipp1991.dta");
 form_y    = "net_tfa";
 form_w    = "e401";
@@ -57,13 +59,13 @@ res2 = res %>% group_by(gamma,K,trim.type,method) %>% summarise(across(c('q1','q
 col_names1 = c('gamma', 'K', 'trim.type', 'method')
 col_names2 = c('est', 'se_split', 'se_lead', 'type')
 res3 = do.call(rbind, lapply(c('1','0','te'), function(x){res2 %>% select(c(col_names1,starts_with(paste('q',x,sep='')),starts_with(paste('se',x,sep='')))) %>% mutate(type=x) %>% setNames(c(col_names1,col_names2))})) %>% mutate(se = sqrt(se_lead^2 + se_split^2))
-print(xtable(res3 %>% ungroup %>% filter(type=='te') %>% mutate(est = sprintf('%.1f (%.1f)',est,se)) %>% select(gamma,K,method,est) %>% pivot_wider(names_from=method, values_from=est) %>% select(gamma,K,lassor,neuralnet,boost,forest) %>% mutate(K=as.factor(K)) ),include.rownames=FALSE)
+print(xtable(res3 %>% ungroup %>% filter(type=='te') %>% mutate(est = sprintf('%.2f (%.2f)',est/1000.,se/1000.), gamma=as.integer(100*gamma)) %>% select(gamma,K,method,est) %>% pivot_wider(names_from=method, values_from=est) %>% select(gamma,K,lassor,neuralnet,boost,forest) %>% mutate(K=as.factor(K)) ),include.rownames=FALSE)
 
 res2 = res_l %>% group_by(gamma,K,trim.type,method) %>% summarise(across(c('q1','q0','qte'), list(mean=~winsor.mean(.,na.rm = TRUE),se=~winsor.sd(.,na.rm = TRUE)/sqrt(n()))), across(c('se1','se0','seqte'), ~winsor.mean(.,na.rm = TRUE))) %>% rename(sete=seqte)
 col_names1 = c('gamma', 'K', 'trim.type', 'method')
 col_names2 = c('est', 'se_split', 'se_lead', 'type')
 res3 = do.call(rbind, lapply(c('1','0','te'), function(x){res2 %>% select(c(col_names1,starts_with(paste('q',x,sep='')),starts_with(paste('se',x,sep='')))) %>% mutate(type=x) %>% setNames(c(col_names1,col_names2))})) %>% mutate(se = sqrt(se_lead^2 + se_split^2))
-print(xtable(res3 %>% ungroup %>% filter(type=='te') %>% mutate(est = sprintf('%.1f (%.1f)',est,se)) %>% select(gamma,K,method,est) %>% pivot_wider(names_from=method, values_from=est) %>% select(gamma,K,lassor,neuralnet,boost,forest) %>% mutate(K=as.factor(K)) ),include.rownames=FALSE)
+print(xtable(res3 %>% ungroup %>% filter(type=='te') %>% mutate(est = sprintf('%.2f (%.2f)',est/1000.,se/1000.), gamma=as.integer(100*gamma)) %>% select(gamma,K,method,est) %>% pivot_wider(names_from=method, values_from=est) %>% select(gamma,K,lassor,neuralnet,boost,forest) %>% mutate(K=as.factor(K)) ),include.rownames=FALSE)
 
 quantSE =  function(x, p) {
   quant <- quantile(x,p)
@@ -134,5 +136,8 @@ plot_range_l = combined_l %>% mutate(target = case_when(target=='1'~'Participant
 
 ggsave('401kQTE.pdf',plot=plot_range    + theme(plot.margin=grid::unit(c(0,0,0,0), "mm")), dpi = 300, height = 4, width = 4)
 ggsave('401kLQTE.pdf',plot=plot_range_l + theme(plot.margin=grid::unit(c(0,0,0,0), "mm")), dpi = 300, height = 4, width = 4)
+
+ggsave('401kQTEwide.pdf',plot=plot_range    + theme(plot.margin=grid::unit(c(0,0,0,0), "mm")), dpi = 300, height = 2, width = 7)
+ggsave('401kLQTEwide.pdf',plot=plot_range_l + theme(plot.margin=grid::unit(c(0,0,0,0), "mm")), dpi = 300, height = 2, width = 7)
 
 stopCluster(cluster)

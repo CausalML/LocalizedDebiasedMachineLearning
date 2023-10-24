@@ -81,7 +81,8 @@ check.data2 = function(data, form_x, form_w, form_t, form_y) {
 ## Symmetrically for control outcome
 ## If avg.eqn is T we solve the average equation where each element is using out-of-fold nuisnaces
 ## If avg.eqn is F we solve the equation in each fold and then average the estimates
-est.quantile.ipw = function(gammas, data, form_x, form_t, form_y, method_prop, option_prop, K=5, trim=c(0.01,0.99), trim.type='none', normalize=T, avg.eqn=T) {
+## oracle.density is an option to pass a guess for the density for use in the standard error estimation
+est.quantile.ipw = function(gammas, data, form_x, form_t, form_y, method_prop, option_prop, K=5, trim=c(0.01,0.99), trim.type='none', normalize=T, avg.eqn=T, oracle.density=NULL) {
   data = data%>%arrange(!! sym(form_y))
   cvgroup   = make.cvgroup.balanced(data, K, form_t)
   prop = cross.fit.propensities(data, cvgroup, form_x, form_t, method_prop, option_prop, trim=trim, trim.type=trim.type, normalize=normalize)
@@ -95,6 +96,19 @@ est.quantile.ipw = function(gammas, data, form_x, form_t, form_y, method_prop, o
     se1 = sd(psi1) / sqrt(sum(prop$keep));
     se0 = sd(psi0) / sqrt(sum(prop$keep));
     seqte = sd(psi1-psi0) / sqrt(sum(prop$keep));
+    if(is.null(oracle.density)){data.frame(
+    gamma=gamma,
+    q1=q1,
+    q0=q0,
+    qte=q1-q0,
+    se1=se1,
+    se0=se0,
+    seqte=seqte)}else{
+    psi1.oracle = (W1[prop$keep] * (data[[form_y]][prop$keep] <= q1) - gamma) / oracle.density[2];
+    psi0.oracle = (W0[prop$keep] * (data[[form_y]][prop$keep] <= q0) - gamma) / oracle.density[1];
+    se1.oracle = sd(psi1.oracle) / sqrt(sum(prop$keep));
+    se0.oracle = sd(psi0.oracle) / sqrt(sum(prop$keep));
+    seqte.oracle = sd(psi1.oracle-psi0.oracle) / sqrt(sum(prop$keep));
     data.frame(
     gamma=gamma,
     q1=q1,
@@ -102,8 +116,11 @@ est.quantile.ipw = function(gammas, data, form_x, form_t, form_y, method_prop, o
     qte=q1-q0,
     se1=se1,
     se0=se0,
-    seqte=seqte
-  )})
+    seqte=seqte,
+    se1.oracle=se1.oracle,
+    se0.oracle=se0.oracle,
+    seqte.oracle=seqte.oracle)}
+    })
 }
 
 ## This uses the estimating equation 1/n sum_i T_i I[Y_i<=theta] / e(X_i) = gamma - 1/n sum_i f(theta,X_i)*(1-T_i/e(X_i))
@@ -119,7 +136,8 @@ est.quantile.ipw = function(gammas, data, form_x, form_t, form_y, method_prop, o
 ## If q.oracle is given then we use that given fixed value for localization; it shuold be a data.frame with columns gamma, q1.true, q0.true
 ## If avg.eqn is T we solve the average equation where each element is using out-of-fold nuisnaces
 ## If avg.eqn is F we solve the equation in each fold and then average the estimates
-est.quantile.ldml = function(gammas, data, form_x, form_t, form_y, method_ipw, option_ipw, method_prop, option_prop, method_cdf, option_cdf, K=5, K_ipw=NULL, semiadaptive=FALSE, trim=c(0.01,0.99), trim.type='none', normalize=T, q.oracle=NULL, avg.eqn=T) {
+## oracle.density is an option to pass a guess for the density for use in the standard error estimation
+est.quantile.ldml = function(gammas, data, form_x, form_t, form_y, method_ipw, option_ipw, method_prop, option_prop, method_cdf, option_cdf, K=5, K_ipw=NULL, semiadaptive=FALSE, trim=c(0.01,0.99), trim.type='none', normalize=T, q.oracle=NULL, avg.eqn=T, oracle.density=NULL) {
   data = data%>%arrange(!! sym(form_y))
   cvgroup   = make.cvgroup.balanced(data, K, form_t)
   prop = cross.fit.propensities(data, cvgroup, form_x, form_t, method_prop, option_prop, trim=trim, trim.type=trim.type, normalize=normalize)
@@ -157,7 +175,7 @@ est.quantile.ldml = function(gammas, data, form_x, form_t, form_y, method_ipw, o
     se1 = sd(psi1) / sqrt(sum(prop$keep));
     se0 = sd(psi0) / sqrt(sum(prop$keep));
     seqte = sd(psi1-psi0) / sqrt(sum(prop$keep));
-    data.frame(
+    if(is.null(oracle.density)){data.frame(
       gamma=gamma,
       q1 = q1,
       q0 = q0,
@@ -165,7 +183,25 @@ est.quantile.ldml = function(gammas, data, form_x, form_t, form_y, method_ipw, o
       se1=se1,
       se0=se0,
       seqte=seqte
+    )}else{
+    psi1.oracle = (W1[prop$keep] * (data[[form_y]][prop$keep] <= q1) - gamma - cdf1[prop$keep] * (1.- data[[form_t]][prop$keep]/prop$prop[prop$keep])) / oracle.density[2];
+    psi0.oracle = (W0[prop$keep] * (data[[form_y]][prop$keep] <= q0) - gamma - cdf0[prop$keep] * (1.- (1.-data[[form_t]][prop$keep])/(1.-prop$prop[prop$keep]))) / oracle.density[1];
+    se1.oracle = sd(psi1.oracle) / sqrt(sum(prop$keep));
+    se0.oracle = sd(psi0.oracle) / sqrt(sum(prop$keep));
+    seqte.oracle = sd(psi1.oracle-psi0.oracle) / sqrt(sum(prop$keep));
+    data.frame(
+      gamma=gamma,
+      q1 = q1,
+      q0 = q0,
+      qte=q1-q0,
+      se1=se1,
+      se0=se0,
+      seqte=seqte,
+      se1.oracle=se1.oracle,
+      se0.oracle=se0.oracle,
+      seqte.oracle=seqte.oracle
     )
+    }
   })
 }
 
@@ -183,13 +219,19 @@ est.quantile.ldml = function(gammas, data, form_x, form_t, form_y, method_ipw, o
 ## If cdf_regress is F then method_cdf takes list of quantiles to simultaneously predict
 ## If avg.eqn is T we solve the average equation where each element is using out-of-fold nuisnaces
 ## If avg.eqn is F we solve the equation in each fold and then average the estimates
-est.quantile.dml = function(gammas, data, form_x, form_t, form_y, method_prop, option_prop, method_cdf, option_cdf, cdf_regress=T, qrange=0.01, K=5, trim=c(0.01,0.99), trim.type='none', normalize=T, avg.eqn=T) {
+## If method_prop is NULL then we remove the propensity correction, ie just invert the fitted CDF
+## oracle.density is an option to pass a guess for the density for use in the standard error estimation
+est.quantile.dml = function(gammas, data, form_x, form_t, form_y, method_prop, option_prop, method_cdf, option_cdf, cdf_regress=T, qrange=0.01, K=5, trim=c(0.01,0.99), trim.type='none', normalize=T, avg.eqn=T, oracle.density=NULL) {
   if(length(qrange)==1) {
     qrange = seq(qrange,1.-qrange,qrange)
     #qrange = qrange[(qrange>=min(gammas)-.1) & (qrange<=max(gammas)+.1)]
   }
   cvgroup   = make.cvgroup.balanced(data, K, form_t)
-  prop = cross.fit.propensities(data, cvgroup, form_x, form_t, method_prop, option_prop, trim=trim, trim.type=trim.type, normalize=normalize)
+  if(is.null(method_prop)) {
+    prop = list(prop=rep(0, nrow(data)), keep=rep(T, nrow(data)))
+  } else {
+    prop = cross.fit.propensities(data, cvgroup, form_x, form_t, method_prop, option_prop, trim=trim, trim.type=trim.type, normalize=normalize)
+  }
   yqs  = quantile(data[[form_y]], qrange)
   cdf1      = matrix(0L, length(qrange), nrow(data));
   cdf0      = matrix(0L, length(qrange), nrow(data));
@@ -209,18 +251,43 @@ est.quantile.dml = function(gammas, data, form_x, form_t, form_y, method_prop, o
     }
   }
   yleq = outer(yqs,data[[form_y]],'>=')
-  a1 = if(avg.eqn) (yleq %*% (prop$keep*data[[form_t]]/prop$prop) + cdf1 %*% (prop$keep*(1-data[[form_t]]/prop$prop))) else foreach(k=1:K)%do%{(yleq %*% ((prop$keep&cvgroup==k)*data[[form_t]]/prop$prop) + cdf1 %*% ((prop$keep&cvgroup==k)*(1-data[[form_t]]/prop$prop)))}
-  a0 = if(avg.eqn) (yleq %*% (prop$keep*(1-data[[form_t]])/(1-prop$prop)) + cdf1 %*% (prop$keep*(1-(1-data[[form_t]])/(1-prop$prop)))) else foreach(k=1:K)%do%{(yleq %*% ((prop$keep&cvgroup==k)*(1-data[[form_t]])/(1-prop$prop)) + cdf1 %*% ((prop$keep&cvgroup==k)*(1-(1-data[[form_t]])/(1-prop$prop))))}
+  if(is.null(method_prop)) {
+    a1 = if(avg.eqn) (cdf1 %*% (prop$keep)) else foreach(k=1:K)%do%{cdf1 %*% (prop$keep&cvgroup==k)}
+    a0 = if(avg.eqn) (cdf0 %*% (prop$keep)) else foreach(k=1:K)%do%{cdf0 %*% (prop$keep&cvgroup==k)}
+  } else {
+    a1 = if(avg.eqn) (yleq %*% (prop$keep*data[[form_t]]/prop$prop) + cdf1 %*% (prop$keep*(1-data[[form_t]]/prop$prop))) else foreach(k=1:K)%do%{(yleq %*% ((prop$keep&cvgroup==k)*data[[form_t]]/prop$prop) + cdf1 %*% ((prop$keep&cvgroup==k)*(1-data[[form_t]]/prop$prop)))}
+    a0 = if(avg.eqn) (yleq %*% (prop$keep*(1-data[[form_t]])/(1-prop$prop)) + cdf0 %*% (prop$keep*(1-(1-data[[form_t]])/(1-prop$prop)))) else foreach(k=1:K)%do%{(yleq %*% ((prop$keep&cvgroup==k)*(1-data[[form_t]])/(1-prop$prop)) + cdf0 %*% ((prop$keep&cvgroup==k)*(1-(1-data[[form_t]])/(1-prop$prop))))}
+  }
   return(foreach(gamma=gammas, .combine=rbind)%do% {
     q1 = if(avg.eqn) yqs[which.min(abs(a1/sum(prop$keep) - gamma))] else foreach(k=1:K, .combine=sum)%do%{yqs[which.min(abs(a1[[k]]/sum(prop$keep&cvgroup==k) - gamma))]}/K;
     q0 = if(avg.eqn) yqs[which.min(abs(a0/sum(prop$keep) - gamma))] else foreach(k=1:K, .combine=sum)%do%{yqs[which.min(abs(a0[[k]]/sum(prop$keep&cvgroup==k) - gamma))]}/K;
     i1 = which.min(abs(yqs-q1))
     i0 = which.min(abs(yqs-q0))
-    psi1 = (yleq[i1,] * (prop$keep*data[[form_t]]/prop$prop) + cdf1[i1,] * (prop$keep*(1-data[[form_t]]/prop$prop)) - gamma) / density_(data[[form_y]][data[[form_t]]==1 & prop$keep], 1./prop$prop[data[[form_t]]==1 & prop$keep], q1);
-    psi0 = (yleq[i0,] * (prop$keep*(1-data[[form_t]])/(1-prop$prop)) + cdf1[i0,] * (prop$keep*(1-(1-data[[form_t]])/(1-prop$prop))) - gamma) / density_(data[[form_y]][data[[form_t]]==0 & prop$keep], 1./(1.-prop$prop[data[[form_t]]==0 & prop$keep]), q0);
-    se1 = sd(psi1[prop$keep]) / sqrt(sum(prop$keep));
-    se0 = sd(psi0[prop$keep]) / sqrt(sum(prop$keep));
-    seqte = sd(psi1[prop$keep]-psi0[prop$keep]) / sqrt(sum(prop$keep));
+    if(is.null(method_prop)) {
+      se1 = 0
+      se0 = 0
+      seqte = 0
+    } else {
+      psi1 = (yleq[i1,] * (prop$keep*data[[form_t]]/prop$prop) + cdf1[i1,] * (prop$keep*(1-data[[form_t]]/prop$prop)) - gamma) / density_(data[[form_y]][data[[form_t]]==1 & prop$keep], 1./prop$prop[data[[form_t]]==1 & prop$keep], q1);
+      psi0 = (yleq[i0,] * (prop$keep*(1-data[[form_t]])/(1-prop$prop)) + cdf0[i0,] * (prop$keep*(1-(1-data[[form_t]])/(1-prop$prop))) - gamma) / density_(data[[form_y]][data[[form_t]]==0 & prop$keep], 1./(1.-prop$prop[data[[form_t]]==0 & prop$keep]), q0);
+      se1 = sd(psi1[prop$keep]) / sqrt(sum(prop$keep));
+      se0 = sd(psi0[prop$keep]) / sqrt(sum(prop$keep));
+      seqte = sd(psi1[prop$keep]-psi0[prop$keep]) / sqrt(sum(prop$keep));
+    }
+    if(is.null(oracle.density)){data.frame(
+      gamma=gamma,
+      q1=q1,
+      q0=q0,
+      qte=q1-q0,
+      se1=se1,
+      se0=se0,
+      seqte=seqte
+    )}else{
+    psi1.oracle = (yleq[i1,] * (prop$keep*data[[form_t]]/prop$prop) + cdf1[i1,] * (prop$keep*(1-data[[form_t]]/prop$prop)) - gamma) / oracle.density[2];
+    psi0.oracle = (yleq[i0,] * (prop$keep*(1-data[[form_t]])/(1-prop$prop)) + cdf0[i0,] * (prop$keep*(1-(1-data[[form_t]])/(1-prop$prop))) - gamma) / oracle.density[1];
+    se1.oracle = sd(psi1.oracle[prop$keep]) / sqrt(sum(prop$keep));
+    se0.oracle = sd(psi0.oracle[prop$keep]) / sqrt(sum(prop$keep));
+    seqte.oracle = sd(psi1.oracle[prop$keep]-psi0.oracle[prop$keep]) / sqrt(sum(prop$keep));
     data.frame(
       gamma=gamma,
       q1=q1,
@@ -228,7 +295,11 @@ est.quantile.dml = function(gammas, data, form_x, form_t, form_y, method_prop, o
       qte=q1-q0,
       se1=se1,
       se0=se0,
-      seqte=seqte)
+      seqte=seqte,
+      se1.oracle=se1.oracle,
+      se0.oracle=se0.oracle,
+      seqte.oracle=seqte.oracle
+    )}
   })
 }
 
